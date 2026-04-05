@@ -408,19 +408,38 @@ function parseID3(buf){
       if(fid==='TALB'&&str)out.album=str;
     }
     if(fid==='APIC'&&!out.cover){
-      var enc=u8[ds],p2=ds+1;
-      while(p2<de&&u8[p2]!==0)p2++;p2++;
-      p2++;// skip pic type
-      if(enc===1||enc===2){while(p2+1<de&&!(u8[p2]===0&&u8[p2+1]===0))p2+=2;p2+=2;}
-      else{while(p2<de&&u8[p2]!==0)p2++;p2++;}
+      var aenc=u8[ds];
+      var p2=ds+1;
+      // 1. skip MIME type string (null-terminated)
+      while(p2<de&&u8[p2]!==0)p2++;
+      p2++; // skip null terminator
+      // 2. skip picture type byte
+      p2++;
+      // 3. skip description string (null-terminated, encoding-aware)
+      if(aenc===1||aenc===2){
+        // UTF-16: null is two bytes 0x00 0x00
+        while(p2+1<de&&!(u8[p2]===0&&u8[p2+1]===0))p2+=2;
+        p2+=2;
+      }else{
+        // ISO-8859-1 or UTF-8: single null byte
+        while(p2<de&&u8[p2]!==0)p2++;
+        p2++;
+      }
+      // 4. remaining bytes are the image
       if(p2<de){
         var imgB=u8.subarray(p2,de);
+        // detect format from magic bytes
         var mime='image/jpeg';
-        if(imgB[0]===0x89&&imgB[1]===0x50)mime='image/png';
-        else if(imgB[0]===0x47&&imgB[1]===0x49)mime='image/gif';
-        var bin='';
-        for(var b=0;b<imgB.length;b++)bin+=String.fromCharCode(imgB[b]);
-        out.cover='data:'+mime+';base64,'+btoa(bin);
+        if(imgB.length>1&&imgB[0]===0x89&&imgB[1]===0x50) mime='image/png';
+        else if(imgB.length>1&&imgB[0]===0x47&&imgB[1]===0x49) mime='image/gif';
+        // safe base64 encode in chunks to avoid call stack overflow on large images
+        try{
+          var CHUNK=8192,bin='';
+          for(var b=0;b<imgB.length;b+=CHUNK){
+            bin+=String.fromCharCode.apply(null,imgB.subarray(b,Math.min(b+CHUNK,imgB.length)));
+          }
+          out.cover='data:'+mime+';base64,'+btoa(bin);
+        }catch(e){ out.cover=null; }
       }
     }
     pos=de;
@@ -457,7 +476,7 @@ function loadFiles(files){
     if(raw.indexOf(' - ')!==-1){var p=raw.split(' - ');fbArtist=p[0].trim();fbTitle=p.slice(1).join(' - ').trim();}
     var meta={name:fbTitle,artist:fbArtist,album:'',cover:null,emoji:EMOJIS[i%EMOJIS.length]};
 
-    var sliceSize=Math.min(f.size,256*1024);
+    var sliceSize=Math.min(f.size,512*1024);
     var slice=f.slice?f.slice(0,sliceSize):f;
     var tagReader=new FileReader();
     tagReader.onload=function(ev){
