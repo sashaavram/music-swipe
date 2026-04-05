@@ -457,6 +457,77 @@ uploadZone.addEventListener('dragover',function(e){e.preventDefault();uploadZone
 uploadZone.addEventListener('dragleave',function(){uploadZone.classList.remove('drag-over');});
 uploadZone.addEventListener('drop',function(e){e.preventDefault();uploadZone.classList.remove('drag-over');loadFiles(e.dataTransfer.files);});
 
+// ── Lazy audio loader ──
+// Holds a blob URL for current track only; previous is revoked to free memory
+var currentBlobUrl=null;
+function loadAudioForTrack(t, cb){
+  if(!t||!t.file){cb(null);return;}
+  var r=new FileReader();
+  r.onload=function(e){ cb(e.target.result); };
+  r.onerror=function(){ cb(null); };
+  r.readAsDataURL(t.file);
+}
+
+// Background tag parser — processes tracks ahead in small batches
+var tagParseQueue=[];
+var tagParseBusy=false;
+var TAG_AHEAD=8; // parse tags for next N tracks ahead
+function scheduleTagParse(startIdx){
+  for(var i=startIdx;i<Math.min(startIdx+TAG_AHEAD,tracks.length);i++){
+    if(tracks[i]&&!tracks[i]._tagsParsed) tagParseQueue.push(i);
+  }
+  runTagQueue();
+}
+function runTagQueue(){
+  if(tagParseBusy||!tagParseQueue.length)return;
+  var i=tagParseQueue.shift();
+  var t=tracks[i];
+  if(!t||t._tagsParsed){runTagQueue();return;}
+  tagParseBusy=true;
+  var sliceSize=Math.min(t.file.size,512*1024);
+  var slice=t.file.slice?t.file.slice(0,sliceSize):t.file;
+  var r=new FileReader();
+  r.onload=function(ev){
+    try{
+      var tags=parseID3(ev.target.result);
+      if(tags.title)t.name=tags.title;
+      if(tags.artist)t.artist=tags.artist;
+      if(tags.album)t.album=tags.album;
+      if(tags.cover)t.cover=tags.cover;
+    }catch(e){}
+    t._tagsParsed=true;
+    tagParseBusy=false;
+    // If this was the current or next card, refresh the card display
+    if(i===idx||i===idx+1) refreshCardDisplay(i);
+    runTagQueue();
+  };
+  r.onerror=function(){t._tagsParsed=true;tagParseBusy=false;runTagQueue();};
+  r.readAsArrayBuffer(slice);
+}
+function refreshCardDisplay(trackIdx){
+  var t=tracks[trackIdx];
+  if(!t)return;
+  var isFront=(trackIdx===idx);
+  var card=document.querySelector('.music-card.'+(isFront?'is-front':'is-back'));
+  if(!card)return;
+  // Update name and artist
+  card.querySelector('.track-name').textContent=t.name;
+  card.querySelector('.track-artist').textContent=t.artist+(t.album?'  ·  '+t.album:'');
+  // Update artwork if cover just arrived
+  if(t.cover){
+    var art=card.querySelector('.artwork-img');
+    if(!art){
+      art=document.createElement('img');
+      art.className='artwork-img';
+      art.alt='';
+      card.querySelector('.artwork').insertBefore(art,card.querySelector('.artwork-bg').nextSibling);
+    }
+    art.src=t.cover;
+    var em=card.querySelector('.artwork-emoji');
+    if(em)em.classList.add('hidden');
+  }
+}
+
 function loadFiles(files){
   var exts=/\.(mp3|mp4|m4a|aac|wav|wave|flac|ogg|oga|opus|caf|aiff|aif)$/i;
   var valid=[];
@@ -465,67 +536,39 @@ function loadFiles(files){
     if(f.type.indexOf('audio/')===0||f.type.indexOf('video/mp4')===0||exts.test(f.name)||f.type==='') valid.push(f);
   }
   if(!valid.length){showToast('No audio files found');return;}
-  document.getElementById('upload-title').textContent='Loading '+valid.length+' track'+(valid.length>1?'s':'')+'...';
 
-  var results=new Array(valid.length);
-  var done=0;
-
-  valid.forEach(function(f,i){
+  // Phase 1: instantly build track list from filenames — no reading needed
+  var loaded=valid.map(function(f,i){
     var raw=f.name.replace(/\.[^.]+$/,'');
     var fbArtist='Unknown Artist',fbTitle=raw;
     if(raw.indexOf(' - ')!==-1){var p=raw.split(' - ');fbArtist=p[0].trim();fbTitle=p.slice(1).join(' - ').trim();}
-    var meta={name:fbTitle,artist:fbArtist,album:'',cover:null,emoji:EMOJIS[i%EMOJIS.length]};
-
-    var sliceSize=Math.min(f.size,512*1024);
-    var slice=f.slice?f.slice(0,sliceSize):f;
-    var tagReader=new FileReader();
-    tagReader.onload=function(ev){
-      try{
-        var tags=parseID3(ev.target.result);
-        if(tags.title)meta.name=tags.title;
-        if(tags.artist)meta.artist=tags.artist;
-        if(tags.album)meta.album=tags.album;
-        if(tags.cover)meta.cover=tags.cover;
-      }catch(e){}
-      var ar=new FileReader();
-      ar.onload=function(ev2){meta.url=ev2.target.result;results[i]=meta;done++;if(done===valid.length)finishLoad(results.filter(Boolean));};
-      ar.onerror=function(){done++;if(done===valid.length)finishLoad(results.filter(Boolean));};
-      ar.readAsDataURL(f);
-    };
-    tagReader.onerror=function(){
-      var ar=new FileReader();
-      ar.onload=function(ev2){meta.url=ev2.target.result;results[i]=meta;done++;if(done===valid.length)finishLoad(results.filter(Boolean));};
-      ar.onerror=function(){done++;if(done===valid.length)finishLoad(results.filter(Boolean));};
-      ar.readAsDataURL(f);
-    };
-    tagReader.readAsArrayBuffer(slice);
+    return {name:fbTitle,artist:fbArtist,album:'',cover:null,emoji:EMOJIS[i%EMOJIS.length],file:f,_tagsParsed:false};
   });
+
+  finishLoad(loaded);
 }
 
 function finishLoad(loaded){
+  tagParseQueue=[];tagParseBusy=false;
   var resume=window._pendingResume;
   if(resume&&resume.trackNames&&resume.trackNames.length){
-    // Try to match loaded files to saved track list by name
+    // Match by filename-derived name
     var nameMap={};
     loaded.forEach(function(t){nameMap[t.name.toLowerCase().trim()]=t;});
-    // Also try matching by original filename fallback
     var matched=[];
     var saved=resume.trackNames;
-    // Build ordered list matching saved order
     for(var i=0;i<saved.length;i++){
       var key=saved[i].name.toLowerCase().trim();
       if(nameMap[key]){
         matched.push(nameMap[key]);
       } else {
-        // File not found — insert placeholder so order is preserved
-        matched.push({name:saved[i].name,artist:saved[i].artist,album:saved[i].album||'',cover:null,url:null,emoji:EMOJIS[i%EMOJIS.length],missing:true});
+        matched.push({name:saved[i].name,artist:saved[i].artist,album:saved[i].album||'',cover:null,file:null,_tagsParsed:true,missing:true,emoji:EMOJIS[i%EMOJIS.length]});
       }
     }
-    // Restore state
     tracks=matched;
     idx=resume.idx;
-    liked=resume.liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,url:null,emoji:'',album:''};});
-    disliked=resume.disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,url:null,emoji:'',album:''};});
+    liked=resume.liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,file:null,emoji:'',album:''};});
+    disliked=resume.disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,file:null,emoji:'',album:''};});
     hist=resume.hist||[];
     sessionId=resume.sessionId||sessionId;
     window._pendingResume=null;
@@ -538,6 +581,8 @@ function finishLoad(loaded){
   locked=false;autoplayNext=false;activeSessionIdx=-1;
   uploadZone.style.display='none';
   updateStats();renderCards();
+  // Start parsing tags for first few tracks in background
+  scheduleTagParse(idx);
 }
 
 // ── Waveform ──
@@ -576,11 +621,22 @@ function renderCards(){
   setTrack(tracks[idx]);
   if(autoplayNext){
     autoplayNext=false;
-    setTimeout(function(){
-      var p=audio.play();
-      if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(){});}
-      else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
-    },400);
+    var t=tracks[idx];
+    if(t&&t.file){
+      playPending=true;
+      playBtn.innerHTML='...';
+      loadAudioForTrack(t,function(dataUrl){
+        playPending=false;
+        if(!dataUrl){playBtn.innerHTML='&#9654;';return;}
+        if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
+        audio.src=dataUrl;
+        setTimeout(function(){
+          var p=audio.play();
+          if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(){playBtn.innerHTML='&#9654;';});}
+          else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+        },100);
+      });
+    }
   }
 }
 
@@ -611,18 +667,41 @@ function makeCard(t,isFront){
 
 // ── Audio ──
 function setTrack(t){
-  if(t.url){audio.src=t.url;}else{audio.removeAttribute('src');}
+  // Don't load audio yet — wait for play button tap (iOS gesture requirement)
+  // Just reset UI state
+  audio.pause();
+  audio.removeAttribute('src');
+  if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
   playing=false;playBtn.innerHTML='&#9654;';setEQ(false);
   cancelAnimationFrame(rafId);
   for(var i=0;i<wfBars.length;i++)wfBars[i].classList.remove('played');
   timeCur.textContent='0:00';timeTot.textContent='\u2014';
 }
+
+var playPending=false;
 playBtn.addEventListener('click',function(){
-  if(!audio.src||audio.src===window.location.href)return;
+  if(playPending)return;
+  var t=tracks[idx];
+  if(!t||!t.file){showToast('No file loaded');return;}
   if(audio.paused){
-    var p=audio.play();
-    if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');});}
-    else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+    if(!audio.src||audio.src===window.location.href){
+      // Load the file now — inside a user gesture so iOS allows it
+      playPending=true;
+      playBtn.innerHTML='...';
+      loadAudioForTrack(t,function(dataUrl){
+        playPending=false;
+        if(!dataUrl){showToast('Could not read file');playBtn.innerHTML='&#9654;';return;}
+        if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
+        audio.src=dataUrl;
+        var p=audio.play();
+        if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');playBtn.innerHTML='&#9654;';});}
+        else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+      });
+    } else {
+      var p=audio.play();
+      if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');});}
+      else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+    }
   }else{
     audio.pause();playing=false;playBtn.innerHTML='&#9654;';setEQ(false);cancelAnimationFrame(rafId);
   }
@@ -671,9 +750,14 @@ function flyOut(dir){
   hist.push({idx:idx,dir:dir});
   autoplayNext=playing;
   audio.pause();playing=false;cancelAnimationFrame(rafId);
+  // Release current track audio from memory
+  audio.removeAttribute('src');
+  if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
   idx++;updateStats();
   saveCurrentSession();
-  saveProgress(); // save position after every swipe
+  saveProgress();
+  // Queue tag parsing for upcoming tracks
+  scheduleTagParse(idx);
   setTimeout(function(){front.remove();locked=false;renderCards();},370);
 }
 
@@ -685,6 +769,8 @@ document.getElementById('btn-undo').addEventListener('click',function(){
   if(last.dir==='left')liked.pop();else disliked.pop();
   idx=last.idx;updateStats();saveCurrentSession();saveProgress();
   audio.pause();playing=false;cancelAnimationFrame(rafId);
+  audio.removeAttribute('src');
+  if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
   var old=document.querySelectorAll('.music-card');
   for(var i=0;i<old.length;i++)old[i].remove();
   locked=false;autoplayNext=false;renderCards();showToast('Undo');
