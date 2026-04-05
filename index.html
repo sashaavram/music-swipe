@@ -743,10 +743,11 @@ function noneMsg(){return '<div style="color:var(--muted);font-size:13px;padding
 // ── Export ──
 function buildExportText(L,D){
   var date=new Date().toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'});
+  function fmt(t){ return t.artist!=='Unknown Artist' ? t.artist+' - '+t.name : t.name; }
   var lines=['Swipe & Play — '+date,'','LIKED ('+L.length+')','——————————————'];
-  if(L.length)L.forEach(function(t,i){lines.push((i+1)+'. '+t.name+(t.artist!=='Unknown Artist'?'  -  '+t.artist:''));});else lines.push('(none)');
+  if(L.length)L.forEach(function(t,i){lines.push((i+1)+'. '+fmt(t));});else lines.push('(none)');
   lines.push('',"DIDN'T LIKE ("+D.length+')','——————————————');
-  if(D.length)D.forEach(function(t,i){lines.push((i+1)+'. '+t.name+(t.artist!=='Unknown Artist'?'  -  '+t.artist:''));});else lines.push('(none)');
+  if(D.length)D.forEach(function(t,i){lines.push((i+1)+'. '+fmt(t));});else lines.push('(none)');
   return lines.join('\n');
 }
 document.getElementById('export-email').addEventListener('click',function(){
@@ -755,10 +756,37 @@ document.getElementById('export-email').addEventListener('click',function(){
 });
 document.getElementById('export-copy').addEventListener('click',function(){
   var data=getSessionData();var text=buildExportText(data.L,data.D);
-  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){showToast('Copied!');}).catch(function(){fallbackCopy(text);});}
-  else{fallbackCopy(text);}
+  iosCopy(text);
 });
-function fallbackCopy(text){var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');showToast('Copied!');}catch(e){showToast('Copy failed');}document.body.removeChild(ta);}
+function iosCopy(text){
+  // iOS Safari needs the element to be editable, visible, and focused within a user gesture
+  var el=document.createElement('textarea');
+  el.value=text;
+  el.setAttribute('readonly','');
+  el.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:2px;opacity:0.01;font-size:16px;border:none;outline:none;';
+  document.body.appendChild(el);
+  // iOS requires a range selection
+  if(navigator.userAgent.match(/ipad|iphone/i)){
+    var range=document.createRange();
+    range.selectNodeContents(el);
+    var sel=window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    el.setSelectionRange(0,999999);
+  } else {
+    el.select();
+  }
+  var ok=false;
+  try{ok=document.execCommand('copy');}catch(e){}
+  document.body.removeChild(el);
+  if(ok){
+    showToast('Copied!');
+  } else if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){showToast('Copied!');}).catch(function(){showToast('Copy failed — use Email instead');});
+  } else {
+    showToast('Copy failed — use Email instead');
+  }
+}
 
 document.getElementById('view-results-btn').addEventListener('click',showResults);
 document.getElementById('close-results').addEventListener('click',function(){resultsPanel.classList.remove('visible');});
