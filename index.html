@@ -207,7 +207,10 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
     </div>
   </div>
 
-  <div class="queue-info" id="queue-info"></div>
+  <div class="queue-row">
+    <div class="queue-info" id="queue-info"></div>
+    <button class="progress-btn" id="btn-progress" style="display:none">&#128203; View list</button>
+  </div>
 
   <div class="swipe-actions" id="swipe-actions">
     <button class="action-btn dislike" id="btn-dislike">&#10005;</button>
@@ -281,7 +284,15 @@ function saveProgress(){
     var data={
       savedAt:new Date().toISOString(),
       sessionId:sessionId,
-      trackNames:tracks.map(function(t){return{name:t.name,artist:t.artist,album:t.album||''};}),
+      // Save both filename (reliable match key) and display name
+      trackNames:tracks.map(function(t){
+        return{
+          filename: t.file ? t.file.name : '',
+          name:t.name,
+          artist:t.artist,
+          album:t.album||''
+        };
+      }),
       idx:idx,
       liked:liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};}),
       disliked:disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};}),
@@ -322,7 +333,7 @@ function clearAllHistory(){try{localStorage.removeItem(STORE);localStorage.remov
 // ── On load: check for saved progress ──
 (function(){
   var prog=loadProgress();
-  if(prog&&prog.trackNames&&prog.trackNames.length&&prog.idx>0){
+  if(prog&&prog.trackNames&&prog.trackNames.length&&prog.idx>=0){
     // Show resume banner
     uploadZone.style.display='none';
     resumeBanner.classList.add('visible');
@@ -349,6 +360,12 @@ function clearAllHistory(){try{localStorage.removeItem(STORE);localStorage.remov
     }
   }
 })();
+
+// Save progress when user leaves the app (switch apps, close tab, etc.)
+window.addEventListener('pagehide', function(){ saveProgress(); });
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='hidden') saveProgress();
+});
 
 // Resume buttons
 document.getElementById('resume-yes-btn').addEventListener('click',function(){
@@ -552,15 +569,20 @@ function finishLoad(loaded){
   tagParseQueue=[];tagParseBusy=false;
   var resume=window._pendingResume;
   if(resume&&resume.trackNames&&resume.trackNames.length){
-    // Match by filename-derived name
-    var nameMap={};
-    loaded.forEach(function(t){nameMap[t.name.toLowerCase().trim()]=t;});
+    // Match by filename first (most reliable), then fall back to display name
+    var filenameMap={}, nameMap={};
+    loaded.forEach(function(t){
+      if(t.file) filenameMap[t.file.name.toLowerCase().trim()]=t;
+      nameMap[t.name.toLowerCase().trim()]=t;
+    });
     var matched=[];
     var saved=resume.trackNames;
     for(var i=0;i<saved.length;i++){
-      var key=saved[i].name.toLowerCase().trim();
-      if(nameMap[key]){
-        matched.push(nameMap[key]);
+      var byFilename = saved[i].filename ? filenameMap[saved[i].filename.toLowerCase().trim()] : null;
+      var byName     = nameMap[saved[i].name.toLowerCase().trim()];
+      var found      = byFilename || byName;
+      if(found){
+        matched.push(found);
       } else {
         matched.push({name:saved[i].name,artist:saved[i].artist,album:saved[i].album||'',cover:null,file:null,_tagsParsed:true,missing:true,emoji:EMOJIS[i%EMOJIS.length]});
       }
@@ -611,6 +633,8 @@ function renderCards(){
   swipeActs.classList.add('visible');
   queueInfo.style.display='block';
   queueInfo.textContent=(idx+1)+' of '+tracks.length;
+  // Show progress button once at least one track has been swiped
+  document.getElementById('btn-progress').style.display=(liked.length||disliked.length)?'block':'none';
   // Back card — skip missing
   var nextIdx=idx+1;
   while(nextIdx<tracks.length&&tracks[nextIdx]&&tracks[nextIdx].missing)nextIdx++;
@@ -782,7 +806,12 @@ function showEmpty(){
   clearProgress(); // all done — no need to resume
 }
 function hideEmpty(){emptyState.classList.remove('visible');}
-function updateStats(){likeEl.textContent=liked.length;dislikeEl.textContent=disliked.length;}
+function updateStats(){
+  likeEl.textContent=liked.length;
+  dislikeEl.textContent=disliked.length;
+  var pb=document.getElementById('btn-progress');
+  if(pb) pb.style.display=(liked.length||disliked.length)?'block':'none';
+}
 
 // ── Results ──
 function getSessionData(){
@@ -795,7 +824,7 @@ function getSessionData(){
   return{L:[],D:[]};
 }
 function switchSession(i){activeSessionIdx=i;showResults();}
-function showResults(){
+function showResults(midSession){
   var h=loadHistory();
   var active=liked.length||disliked.length;
   var html='';
@@ -814,6 +843,15 @@ function showResults(){
   var L=data.L,D=data.D;
   document.getElementById('results-likes').innerHTML='<div class="rs-title">Liked &middot; '+L.length+'</div>'+(L.length?L.map(function(t){return rRow(t,'like');}).join(''):noneMsg());
   document.getElementById('results-dislikes').innerHTML='<div class="rs-title">Didn\'t Like &middot; '+D.length+'</div>'+(D.length?D.map(function(t){return rRow(t,'nope');}).join(''):noneMsg());
+  // Update panel title based on context
+  var titleEl=document.querySelector('.results-title');
+  if(titleEl){
+    if(midSession&&tracks.length){
+      titleEl.textContent='So far — '+idx+' of '+tracks.length+' rated';
+    } else {
+      titleEl.textContent='Your Results';
+    }
+  }
   resultsPanel.classList.add('visible');
 }
 function rRow(t,cls){
@@ -874,6 +912,10 @@ function iosCopy(text){
   }
 }
 
+document.getElementById('btn-progress').addEventListener('click', function(){
+  activeSessionIdx=-1; // force current session
+  showResults(true);   // true = mid-session mode
+});
 document.getElementById('view-results-btn').addEventListener('click',showResults);
 document.getElementById('close-results').addEventListener('click',function(){resultsPanel.classList.remove('visible');});
 document.getElementById('load-new-btn').addEventListener('click',resetToUpload);
@@ -893,7 +935,7 @@ function resetToUpload(){
   var old=document.querySelectorAll('.music-card');for(var i=0;i<old.length;i++)old[i].remove();
   emptyState.classList.remove('visible');resumeBanner.classList.remove('visible');
   playerBar.classList.remove('visible');swipeActs.classList.remove('visible');
-  queueInfo.style.display='none';uploadZone.style.display='flex';
+  queueInfo.style.display='none';document.getElementById('btn-progress').style.display='none';uploadZone.style.display='flex';
   document.getElementById('upload-title').textContent='Drop your music';
   document.getElementById('file-input').value='';
   document.getElementById('folder-input').value='';
