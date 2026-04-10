@@ -279,12 +279,11 @@ var autoplayNext=false;
 // ── Progress persistence ──
 // Saves track list (names only) + position + ratings — NOT audio data
 function saveProgress(){
+  if(!tracks.length) return;
   try{
-    if(!tracks.length) return;
     var data={
       savedAt:new Date().toISOString(),
       sessionId:sessionId,
-      // Save both filename (reliable match key) and display name
       trackNames:tracks.map(function(t){
         return{
           filename: t.file ? t.file.name : '',
@@ -294,12 +293,35 @@ function saveProgress(){
         };
       }),
       idx:idx,
-      liked:liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};}),
-      disliked:disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};}),
+      // IMPORTANT: never save cover art — it blows the 5MB localStorage limit
+      // Cover art is re-parsed from files on resume
+      liked:liked.map(function(t){return{name:t.name,artist:t.artist};}),
+      disliked:disliked.map(function(t){return{name:t.name,artist:t.artist};}),
       hist:hist
     };
-    localStorage.setItem(PROGRESS_STORE,JSON.stringify(data));
-  }catch(e){}
+    var json=JSON.stringify(data);
+    // If still too large (e.g. huge track list), strip hist as last resort
+    if(json.length>4*1024*1024){
+      data.hist=[];
+      json=JSON.stringify(data);
+    }
+    localStorage.setItem(PROGRESS_STORE,json);
+  }catch(e){
+    // If localStorage is full, try clearing old history first then retry
+    try{
+      localStorage.removeItem(STORE);
+      var data2={
+        savedAt:new Date().toISOString(),
+        sessionId:sessionId,
+        trackNames:tracks.map(function(t){return{filename:t.file?t.file.name:'',name:t.name,artist:t.artist,album:t.album||''};}),
+        idx:idx,
+        liked:liked.map(function(t){return{name:t.name,artist:t.artist};}),
+        disliked:disliked.map(function(t){return{name:t.name,artist:t.artist};}),
+        hist:[]
+      };
+      localStorage.setItem(PROGRESS_STORE,JSON.stringify(data2));
+    }catch(e2){}
+  }
 }
 function loadProgress(){
   try{return JSON.parse(localStorage.getItem(PROGRESS_STORE));}catch(e){return null;}
@@ -318,8 +340,9 @@ function saveCurrentSession(){
     var entry={
       _session:sessionId,
       savedAt:new Date().toISOString(),
-      liked:liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};}),
-      disliked:disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null};})
+      // No cover art — keeps localStorage well under the 5MB limit
+      liked:liked.map(function(t){return{name:t.name,artist:t.artist};}),
+      disliked:disliked.map(function(t){return{name:t.name,artist:t.artist};})
     };
     var found=false;
     for(var i=0;i<h.length;i++){if(h[i]._session===sessionId){h[i]=entry;found=true;break;}}
@@ -589,8 +612,8 @@ function finishLoad(loaded){
     }
     tracks=matched;
     idx=resume.idx;
-    liked=resume.liked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,file:null,emoji:'',album:''};});
-    disliked=resume.disliked.map(function(t){return{name:t.name,artist:t.artist,cover:t.cover||null,file:null,emoji:'',album:''};});
+    liked=resume.liked.map(function(t){return{name:t.name,artist:t.artist,cover:null,file:null,emoji:'',album:''};});
+    disliked=resume.disliked.map(function(t){return{name:t.name,artist:t.artist,cover:null,file:null,emoji:'',album:''};});
     hist=resume.hist||[];
     sessionId=resume.sessionId||sessionId;
     window._pendingResume=null;
