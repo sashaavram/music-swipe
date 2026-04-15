@@ -488,6 +488,109 @@ function parseID3(buf){
   return out;
 }
 
+// ── FLAC / Vorbis Comment parser ──
+// FLAC structure: fLaC marker, then metadata blocks
+// Each block: 1 byte header (bit7=last, bits6-0=type), 3 bytes length
+// Block type 4 = VORBIS_COMMENT, type 6 = PICTURE
+function parseFLAC(buf){
+  var u8=new Uint8Array(buf);
+  var out={title:null,artist:null,album:null,cover:null};
+
+  // Check for ID3 tag prepended to FLAC (some taggers do this)
+  if(u8[0]===0x49&&u8[1]===0x44&&u8[2]===0x33){
+    var id3=parseID3(buf);
+    if(id3.title||id3.artist||id3.cover) return id3;
+  }
+
+  // Check fLaC marker
+  if(u8[0]!==0x66||u8[1]!==0x4C||u8[2]!==0x61||u8[3]!==0x43) return out;
+
+  var pos=4;
+  var last=false;
+  while(!last&&pos+4<u8.length){
+    var hdr=u8[pos];
+    last=!!(hdr&0x80);
+    var type=hdr&0x7F;
+    var len=(u8[pos+1]<<16)|(u8[pos+2]<<8)|u8[pos+3];
+    pos+=4;
+    if(pos+len>u8.length) break;
+
+    // VORBIS_COMMENT block
+    if(type===4){
+      var p=pos;
+      // vendor string length (little-endian u32)
+      var vlen=u8[p]|(u8[p+1]<<8)|(u8[p+2]<<16)|(u8[p+3]<<24);
+      p+=4+vlen;
+      // comment count
+      var count=u8[p]|(u8[p+1]<<8)|(u8[p+2]<<16)|(u8[p+3]<<24);
+      p+=4;
+      for(var ci=0;ci<count&&p+4<=pos+len;ci++){
+        var clen=u8[p]|(u8[p+1]<<8)|(u8[p+2]<<16)|(u8[p+3]<<24);
+        p+=4;
+        if(p+clen>pos+len) break;
+        // decode UTF-8 comment
+        var cbytes=u8.subarray(p,p+clen);
+        var cstr='';
+        try{
+          cstr=decodeURIComponent(escape(String.fromCharCode.apply(null,cbytes)));
+        }catch(e){
+          for(var bi=0;bi<cbytes.length;bi++) cstr+=String.fromCharCode(cbytes[bi]);
+        }
+        var eq=cstr.indexOf('=');
+        if(eq>0){
+          var key=cstr.slice(0,eq).toUpperCase();
+          var val=cstr.slice(eq+1).trim();
+          if(key==='TITLE'&&val)out.title=val;
+          if(key==='ARTIST'&&val)out.artist=val;
+          if(key==='ALBUM'&&val)out.album=val;
+        }
+        p+=clen;
+      }
+    }
+
+    // PICTURE block
+    if(type===6&&!out.cover){
+      var p=pos;
+      // picture type (u32 BE) — skip
+      p+=4;
+      // mime length
+      var mlen=(u8[p]<<24)|(u8[p+1]<<16)|(u8[p+2]<<8)|u8[p+3]; p+=4;
+      var mime='image/jpeg';
+      try{ mime=decodeURIComponent(escape(String.fromCharCode.apply(null,u8.subarray(p,p+mlen)))); }catch(e){}
+      p+=mlen;
+      // description length
+      var dlen=(u8[p]<<24)|(u8[p+1]<<16)|(u8[p+2]<<8)|u8[p+3]; p+=4+dlen;
+      // width, height, color depth, indexed colors — skip 16 bytes
+      p+=16;
+      // data length
+      var imgLen=(u8[p]<<24)|(u8[p+1]<<16)|(u8[p+2]<<8)|u8[p+3]; p+=4;
+      if(imgLen>0&&p+imgLen<=pos+len){
+        var imgB=u8.subarray(p,p+imgLen);
+        // detect format from magic bytes (overrides mime string if needed)
+        if(imgB[0]===0x89&&imgB[1]===0x50) mime='image/png';
+        else if(imgB[0]===0xFF&&imgB[1]===0xD8) mime='image/jpeg';
+        try{
+          var CHUNK=8192,bin='';
+          for(var bi=0;bi<imgB.length;bi+=CHUNK){
+            bin+=String.fromCharCode.apply(null,imgB.subarray(bi,Math.min(bi+CHUNK,imgB.length)));
+          }
+          out.cover='data:'+mime+';base64,'+btoa(bin);
+        }catch(e){ out.cover=null; }
+      }
+    }
+
+    pos+=len;
+  }
+  return out;
+}
+
+// ── Unified tag parser — picks ID3 or FLAC based on file type ──
+function parseTags(buf, filename){
+  var ext=(filename||'').split('.').pop().toLowerCase();
+  if(ext==='flac') return parseFLAC(buf);
+  return parseID3(buf);
+}
+
 // ── File picking ──
 document.getElementById('choose-btn').addEventListener('click',function(){document.getElementById('file-input').click();});
 document.getElementById('folder-btn').addEventListener('click',function(){document.getElementById('folder-input').click();});
@@ -524,12 +627,12 @@ function runTagQueue(){
   var t=tracks[i];
   if(!t||t._tagsParsed){runTagQueue();return;}
   tagParseBusy=true;
-  var sliceSize=Math.min(t.file.size,512*1024);
+  var sliceSize=Math.min(t.file.size,1024*1024); // 1MB — FLAC picture blocks can be large
   var slice=t.file.slice?t.file.slice(0,sliceSize):t.file;
   var r=new FileReader();
   r.onload=function(ev){
     try{
-      var tags=parseID3(ev.target.result);
+      var tags=parseTags(ev.target.result, t.file?t.file.name:'');
       if(tags.title)t.name=tags.title;
       if(tags.artist)t.artist=tags.artist;
       if(tags.album)t.album=tags.album;
