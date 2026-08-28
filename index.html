@@ -111,6 +111,49 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
 .action-btn.like{border-color:var(--like);color:var(--like);}
 .action-btn.undo{border-color:var(--muted);color:var(--muted);width:38px;height:38px;font-size:14px;}
 
+
+/* ── Icon buttons ── */
+#play-btn svg,.ctrl-btn svg,.action-btn svg,.close-btn svg{display:block;}
+.progress-btn,.export-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;}
+.pb-ic,.ex-ic,.sb-ic{display:inline-flex;align-items:center;}
+.sb-ic svg{width:11px;height:11px;}
+.saved-badge{display:inline-flex;align-items:center;gap:4px;}
+.r-badge{display:inline-flex;align-items:center;justify-content:center;padding:5px 9px;}
+.r-badge svg{width:14px;height:14px;}
+.action-btn.undo svg{width:16px;height:16px;}
+
+/* ── Landscape / short-viewport layout ── */
+@media (orientation:landscape) and (max-height:560px){
+  .app{max-width:100%;padding:0 20px max(10px,env(safe-area-inset-bottom));
+       display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);
+       grid-template-rows:auto 1fr;column-gap:22px;align-content:start;}
+  .header{grid-column:1/-1;padding:max(10px,env(safe-area-inset-top)) 0 4px;}
+  .card-area{grid-column:1;grid-row:2;align-items:center;padding-bottom:6px;}
+  .right-col{grid-column:2;grid-row:2;display:flex;flex-direction:column;
+             justify-content:center;gap:8px;min-height:0;}
+  .music-card{max-width:none;width:100%;display:flex;gap:12px;align-items:center;
+              padding:12px 14px;border-radius:18px;}
+  .music-card .artwork{width:104px;min-width:104px;height:104px;max-height:104px;
+                       margin-bottom:0;border-radius:12px;font-size:34px;}
+  .card-text{min-width:0;flex:1;}
+  .swipe-label{top:10px;font-size:13px;padding:2px 8px;border-width:2px;}
+  .swipe-label.like{left:10px;} .swipe-label.nope{right:10px;}
+  .tap-hint{font-size:8px;bottom:5px;padding:1px 6px;}
+  .player-bar{padding:0;gap:4px;}
+  .waveform{height:22px;}
+  .controls{gap:22px;}
+  #play-btn{width:40px;height:40px;}
+  .swipe-actions{padding:2px 0 0;gap:16px;}
+  .action-btn{width:46px;height:46px;}
+  .action-btn.undo{width:34px;height:34px;}
+  .upload-zone,.empty-state,.resume-banner{gap:8px;}
+  .upload-icon{font-size:26px;} .upload-title{font-size:16px;}
+  .upload-sub{font-size:10px;max-width:280px;}
+  .resume-tracks{max-height:70px;}
+  .results-header{padding:max(14px,env(safe-area-inset-top)) 0 10px;}
+  .results-panel{padding:0 24px 20px;}
+}
+
 /* Toast */
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:9px 18px;font-size:13px;font-weight:700;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap;z-index:300;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
@@ -175,7 +218,7 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
 
     <!-- Resume banner -->
     <div class="resume-banner" id="resume-banner">
-      <div class="resume-icon">&#9654;&#65039;</div>
+      <div class="resume-icon" id="resume-icon"></div>
       <div class="resume-title" id="resume-title">Continue where you left off?</div>
       <div class="resume-sub" id="resume-sub"></div>
       <div class="resume-tracks" id="resume-tracks"></div>
@@ -196,26 +239,28 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
 
   </div>
 
+  <div class="right-col">
   <!-- Player -->
   <div class="player-bar" id="player-bar">
     <div class="waveform" id="waveform"></div>
     <div class="time-row"><span id="time-cur">0:00</span><span id="time-tot">&mdash;</span></div>
     <div class="controls">
-      <button class="ctrl-btn" id="btn-rew">&#9194;</button>
-      <button id="play-btn">&#9654;</button>
-      <button class="ctrl-btn" id="btn-fwd">&#9193;</button>
+      <button class="ctrl-btn" id="btn-rew" aria-label="Back 10s"></button>
+      <button id="play-btn" aria-label="Play"></button>
+      <button class="ctrl-btn" id="btn-fwd" aria-label="Forward 10s"></button>
     </div>
   </div>
 
   <div class="queue-row">
     <div class="queue-info" id="queue-info"></div>
-    <button class="progress-btn" id="btn-progress" style="display:none">&#128203; View list</button>
+    <button class="progress-btn" id="btn-progress" style="display:none"><span class="pb-ic"></span>View list</button>
   </div>
 
   <div class="swipe-actions" id="swipe-actions">
-    <button class="action-btn dislike" id="btn-dislike">&#10005;</button>
-    <button class="action-btn undo"    id="btn-undo">&#8617;</button>
-    <button class="action-btn like"    id="btn-like">&#9829;</button>
+    <button class="action-btn dislike" id="btn-dislike" aria-label="Skip"></button>
+    <button class="action-btn undo" id="btn-undo" aria-label="Undo"></button>
+    <button class="action-btn like" id="btn-like" aria-label="Like"></button>
+  </div>
   </div>
 </div>
 
@@ -223,12 +268,12 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
 <div class="results-panel" id="results-panel">
   <div class="results-header">
     <div class="results-title">Your Results</div>
-    <button class="close-btn" id="close-results">&#10005;</button>
+    <button class="close-btn" id="close-results" aria-label="Close"></button>
   </div>
   <div id="session-selector"></div>
   <div class="export-bar">
-    <button class="export-btn primary" id="export-email">&#9993; Email</button>
-    <button class="export-btn" id="export-copy">&#128203; Copy</button>
+    <button class="export-btn primary" id="export-email"><span class="ex-ic"></span>Email</button>
+    <button class="export-btn" id="export-copy"><span class="ex-ic"></span>Copy</button>
   </div>
   <div id="results-likes" class="results-section"></div>
   <div id="results-dislikes" class="results-section"></div>
@@ -242,6 +287,23 @@ body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);displa
 <audio id="audio" playsinline webkit-playsinline preload="none"></audio>
 
 <script>
+
+// ── SVG icons ──
+var IC = {
+  play:'<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.1-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14z"/></svg>',
+  pause:'<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1.4"/><rect x="13.5" y="5" width="4" height="14" rx="1.4"/></svg>',
+  spin:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite"/></path></svg>',
+  rew:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19 3 12l8-7v14z"/><path d="M21 19l-8-7 8-7v14z"/></svg>',
+  fwd:'<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l8 7-8 7V5z"/><path d="M3 5l8 7-8 7V5z"/></svg>',
+  heart:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 1 0-7.1 7.1l8.1 8.1a1 1 0 0 0 1.4 0l8.1-8.1a5 5 0 0 0 0-7.1z"/></svg>',
+  close:'<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  undo:'<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.1-5.7L3 10"/></svg>',
+  list:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>',
+  mail:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 7 8.1 5.6a1.6 1.6 0 0 0 1.8 0L21 7"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5.5 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v.5"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/></svg>'
+};
+
 var EMOJIS=['&#127928;','&#127929;','&#129345;','&#127930;','&#127931;','&#127927;','&#127908;','&#127911;','&#127932;','&#127925;','&#127926;','&#128266;'];
 var STORE='swipeplay_v3';
 var PROGRESS_STORE='swipeplay_progress';
@@ -377,7 +439,7 @@ function clearAllHistory(){try{localStorage.removeItem(STORE);localStorage.remov
     if(h.length){
       var b=document.createElement('div');
       b.className='stat saved-badge';
-      b.innerHTML='&#128203; history';
+      b.innerHTML='<span class="sb-ic">'+IC.clock+'</span>history';
       b.addEventListener('click',showResults);
       document.getElementById('stats-pill').appendChild(b);
     }
@@ -409,7 +471,7 @@ document.getElementById('resume-no-btn').addEventListener('click',function(){
   if(h.length&&!document.querySelector('.saved-badge')){
     var b=document.createElement('div');
     b.className='stat saved-badge';
-    b.innerHTML='&#128203; history';
+    b.innerHTML='<span class="sb-ic">'+IC.clock+'</span>history';
     b.addEventListener('click',showResults);
     document.getElementById('stats-pill').appendChild(b);
   }
@@ -590,6 +652,25 @@ function parseTags(buf, filename){
   if(ext==='flac') return parseFLAC(buf);
   return parseID3(buf);
 }
+
+
+// Inject SVG icons into static buttons
+(function(){
+  document.getElementById('btn-rew').innerHTML=IC.rew;
+  document.getElementById('btn-fwd').innerHTML=IC.fwd;
+  document.getElementById('play-btn').innerHTML=IC.play;
+  document.getElementById('btn-dislike').innerHTML=IC.close;
+  document.getElementById('btn-undo').innerHTML=IC.undo;
+  document.getElementById('btn-like').innerHTML=IC.heart;
+  var cr=document.getElementById('close-results'); if(cr) cr.innerHTML=IC.close;
+  var pb=document.getElementById('btn-progress'); if(pb) pb.querySelector('.pb-ic').innerHTML=IC.list;
+  var em=document.getElementById('export-email'); if(em) em.querySelector('.ex-ic').innerHTML=IC.mail;
+  var cp=document.getElementById('export-copy'); if(cp) cp.querySelector('.ex-ic').innerHTML=IC.copy;
+  var ri=document.getElementById('resume-icon');
+  if(ri) ri.innerHTML='<svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)"><circle cx="12" cy="12" r="9.2"/><path d="M10.2 8.6v6.8l5.4-3.4z" fill="currentColor" stroke="none"/></svg>';
+  var sb=document.querySelector('.saved-badge');
+  if(sb) sb.innerHTML='<span class="sb-ic">'+IC.clock+'</span>history';
+})();
 
 // ── File picking ──
 document.getElementById('choose-btn').addEventListener('click',function(){document.getElementById('file-input').click();});
@@ -774,16 +855,16 @@ function renderCards(){
     var t=tracks[idx];
     if(t&&t.file){
       playPending=true;
-      playBtn.innerHTML='...';
+      playBtn.innerHTML=IC.spin;
       loadAudioForTrack(t,function(dataUrl){
         playPending=false;
-        if(!dataUrl){playBtn.innerHTML='&#9654;';return;}
+        if(!dataUrl){playBtn.innerHTML=IC.play;return;}
         if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
         audio.src=dataUrl;
         setTimeout(function(){
           var p=audio.play();
-          if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(){playBtn.innerHTML='&#9654;';});}
-          else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+          if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}).catch(function(){playBtn.innerHTML=IC.play;});}
+          else{playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}
         },100);
       });
     }
@@ -802,11 +883,11 @@ function makeCard(t,isFront){
     '</div>'+
     (isFront?'<div class="tap-hint">tap +15s</div>':'');
   var sub=t.artist+(t.album?'  ·  '+t.album:'');
-  d.innerHTML='<div class="swipe-label like">LIKE &#9829;</div>'+
-    '<div class="swipe-label nope">&#10005; NOPE</div>'+
+  d.innerHTML='<div class="swipe-label like">LIKE</div>'+
+    '<div class="swipe-label nope">NOPE</div>'+
     '<div class="artwork"'+(isFront?' id="card-art"':'')+'>'+artInner+'</div>'+
-    '<div class="track-name">'+esc(t.name)+'</div>'+
-    '<div class="track-artist">'+esc(sub)+'</div>';
+    '<div class="card-text"><div class="track-name">'+esc(t.name)+'</div>'+
+    '<div class="track-artist">'+esc(sub)+'</div></div>';
   if(isFront){
     d.querySelector('#card-art').addEventListener('click',function(){
       if(!locked&&audio.duration){audio.currentTime=Math.min(audio.duration,audio.currentTime+15);showToast('+15s');}
@@ -822,7 +903,7 @@ function setTrack(t){
   audio.pause();
   audio.removeAttribute('src');
   if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
-  playing=false;playBtn.innerHTML='&#9654;';setEQ(false);
+  playing=false;playBtn.innerHTML=IC.play;setEQ(false);
   cancelAnimationFrame(rafId);
   for(var i=0;i<wfBars.length;i++)wfBars[i].classList.remove('played');
   timeCur.textContent='0:00';timeTot.textContent='\u2014';
@@ -837,34 +918,34 @@ playBtn.addEventListener('click',function(){
     if(!audio.src||audio.src===window.location.href){
       // Load the file now — inside a user gesture so iOS allows it
       playPending=true;
-      playBtn.innerHTML='...';
+      playBtn.innerHTML=IC.spin;
       loadAudioForTrack(t,function(dataUrl){
         playPending=false;
-        if(!dataUrl){showToast('Could not read file');playBtn.innerHTML='&#9654;';return;}
+        if(!dataUrl){showToast('Could not read file');playBtn.innerHTML=IC.play;return;}
         if(currentBlobUrl){URL.revokeObjectURL(currentBlobUrl);currentBlobUrl=null;}
         audio.src=dataUrl;
         var p=audio.play();
-        if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');playBtn.innerHTML='&#9654;';});}
-        else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+        if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');playBtn.innerHTML=IC.play;});}
+        else{playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}
       });
     } else {
       var p=audio.play();
-      if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');});}
-      else{playing=true;playBtn.innerHTML='&#9646;&#9646;';setEQ(true);startRAF();}
+      if(p!==undefined){p.then(function(){playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}).catch(function(e){console.warn(e);showToast('Tap play again');});}
+      else{playing=true;playBtn.innerHTML=IC.pause;setEQ(true);startRAF();}
     }
   }else{
-    audio.pause();playing=false;playBtn.innerHTML='&#9654;';setEQ(false);cancelAnimationFrame(rafId);
+    audio.pause();playing=false;playBtn.innerHTML=IC.play;setEQ(false);cancelAnimationFrame(rafId);
   }
 });
 document.getElementById('btn-rew').addEventListener('click',function(){audio.currentTime=Math.max(0,audio.currentTime-10);});
 document.getElementById('btn-fwd').addEventListener('click',function(){if(audio.duration)audio.currentTime=Math.min(audio.duration,audio.currentTime+10);});
 audio.addEventListener('loadedmetadata',function(){timeTot.textContent=fmt(audio.duration);});
 audio.addEventListener('timeupdate',function(){timeCur.textContent=fmt(audio.currentTime);updateWF();});
-audio.addEventListener('ended',function(){playing=false;playBtn.innerHTML='&#9654;';setEQ(false);cancelAnimationFrame(rafId);});
+audio.addEventListener('ended',function(){playing=false;playBtn.innerHTML=IC.play;setEQ(false);cancelAnimationFrame(rafId);});
 audio.addEventListener('error',function(){
   var c={1:'Aborted',2:'Network',3:'Decode error',4:'Format unsupported'};
   showToast('\u26A0\uFE0F '+(audio.error?(c[audio.error.code]||'Error'):'Error'));
-  playing=false;playBtn.innerHTML='&#9654;';setEQ(false);
+  playing=false;playBtn.innerHTML=IC.play;setEQ(false);
 });
 function startRAF(){cancelAnimationFrame(rafId);function tick(){if(!playing)return;updateWF();rafId=requestAnimationFrame(tick);}rafId=requestAnimationFrame(tick);}
 function updateWF(){if(!audio.duration)return;var p=audio.currentTime/audio.duration;var n=Math.floor(p*wfBars.length);for(var i=0;i<wfBars.length;i++){if(i<n)wfBars[i].classList.add('played');else wfBars[i].classList.remove('played');}}
@@ -986,7 +1067,7 @@ function rRow(t,cls){
   return '<div class="result-item">'+
     '<div class="r-thumb">'+thumb+'</div>'+
     '<div class="r-info"><div class="r-name">'+esc(t.name)+'</div><div class="r-artist">'+esc(t.artist)+'</div></div>'+
-    '<div class="r-badge '+cls+'">'+(cls==='like'?'&#9829;':'&#10005;')+'</div></div>';
+    '<div class="r-badge '+cls+'">'+(cls==='like'?IC.heart:IC.close)+'</div></div>';
 }
 function noneMsg(){return '<div style="color:var(--muted);font-size:13px;padding:10px 0">Nothing here</div>';}
 
